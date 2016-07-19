@@ -12,62 +12,167 @@
             position: absolute;
         }
     </style>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
     <script src="quadtree.min.js"></script>
     <script src="V.js"></script>
     <script src="LineBuffer.js"></script>
     <script>
+		function loadImage(callback) {
+			 $.ajax({
+				url: 'element.txt',
+			 }).done(callback);
+		}
+	
         window.onload = load;
         function load() {
-            var buffer = LineBuffer(V(10000, 10000)),
+            var paintingSize = V(100000, 100000),
+				buffer = LineBuffer(paintingSize),
                 canvas = document.querySelector('#canvas'),
                 ctx = canvas.getContext('2d'),
                 canvDim = V(canvas.clientWidth, canvas.clientHeight),
+				errors = [],
+				notImplementedOperations = {},
                 maxLineLength = 400;
             
-            canvas.width = canvDim.x;
-            canvas.height = canvDim.y;
-            
-            for (var i = 0; i < 150000; i++) {
-                var p1 = V(Math.random() * 10000, Math.random() * 10000);
-                buffer.insert(
-                    p1,
-                    p1.add(V(Math.random() * maxLineLength - maxLineLength / 2, Math.random() * maxLineLength - maxLineLength / 2)));
-            }
-            
-            (function() {
-                var dPos = null, delta = new V(0, 0), offset = V(0, 0);
-                canvas.addEventListener('mousedown', function(evt) {
-                    dPos = V(evt.clientX, evt.clientY);
-                });
-                canvas.addEventListener('mousemove', function(evt) {
-                    if (dPos === null) return;
-                    delta = dPos.subtract(V(evt.clientX, evt.clientY));                
-                });
-                canvas.addEventListener('mouseup', function(evt) {
-                    if (dPos === null) return;
-                    offset = offset.add(delta);
-                    delta = V(0, 0);
-                    dPos = null;
-                });
-                function loop() {
-                    // translate(delta);
-                    paint(offset.add(delta))
-                    requestAnimationFrame(loop);
-                }
-                paint(offset.add(delta));
-                loop();
-            })();
-
-            function translate(delta) {
-                canvas.style.transform = "translate3d(" + -delta.x + "px, " + -delta.y + "px, 0)";
-            }
-
+			loadImage(function(data) {
+				var paths = [];
+				var parts = data.split(' d="').slice(1);
+				parts.forEach(function(d) {
+					paths.push(d.split('"')[0]);
+				});
+				paths.forEach(function(p) {
+					PathStringParser(p).lines.forEach(function(l) {
+						if (l.length === 1) return;
+						for (var i = 1; i < l.length; i++) {
+							buffer.insert(l[i-1], l[i]);
+						}
+					});
+				});
+				console.log(notImplementedOperations);
+				run();
+			});
+			
+			function PathStringParser(path) {
+				var parts = [], operations = [], lines = [];
+				setParts();
+				setOperations();
+				setLines();
+				return {
+					parts: parts,
+					operations: operations,
+					lines: lines
+				};
+				function setParts() {
+					var cache;
+					parts = [];
+					path.split('').forEach(function(d) {
+						if (d === ' ') { // space
+							cache = d;
+							return;
+						}
+						if ((isNum(cache) || cache === '.' || cache === '-') && (isNum(d) || d === '.')) { // number matching
+							parts[parts.length - 1] += d.toString();
+							return;
+						}
+						parts.push(d);
+						cache = d;
+					});
+				}
+				
+				function isNum(d) {
+					return ((~~d).toString() === d);
+				}
+				
+				function setOperations() {
+					operations = [];
+					parts.forEach(function(d) {
+						if (isNum(d)) {
+							operations[operations.length-1].values.push(~~d);
+							return;
+						}
+						if (d.length !== 1) errors.push(d);
+						else operations.push({ op: d, values: [] });
+					});
+				}
+				
+				function setLines() {
+					lines = [];
+					operations.forEach(function(o) {
+						var prev, oldCursor, cursor = V(0, 0);
+						switch (o.op) {
+							case 'm': // m1 1 // moveTo
+								if (o.values[0] === undefined || o.values[1] === undefined) {
+									console.log(o, path);
+									return;
+								}
+								cursor = V(o.values[0], o.values[1]);
+								
+								break;
+							case 'M': // M1 1 // moveTo
+								if (o.values[0] === undefined || o.values[1] === undefined) {
+									console.log(o, path);
+									return;
+								}
+								cursor = V(o.values[0], o.values[1]);
+								break;
+							case 'l': // l1 1 // lineTo
+								lines.push([ cursor, cursor = cursor.add(V(o.values[0], o.values[1])) ]);
+								break;
+							case 'L': // L1 1 // lineTo
+								lines.push([ cursor, cursor = V(o.values[0], o.values[1]) ]);
+								break;
+							case 'h': // h1 1 // horizontal lineTo
+								lines.push([ cursor, cursor = cursor.add(V(o.values[0], 0)) ]);
+								break;
+							case 'v': // h1 1 // vertical lineTo
+								lines.push([ cursor, cursor = cursor.add(V(0, o.values[0])) ]);
+								break;
+							default:
+								if (notImplementedOperations[o.op] === undefined) {
+									notImplementedOperations[o.op] = [ o ];
+								} else {
+									notImplementedOperations[o.op].push(o);
+								}
+						}
+					});
+				}
+			}
+			
+			function run() {
+				canvas.width = canvDim.x;
+				canvas.height = canvDim.y;
+				
+				(function() {
+					var dPos = null, delta = new V(0, 0), offset = V(0, 0);
+					canvas.addEventListener('mousedown', function(evt) {
+						dPos = V(evt.clientX, evt.clientY);
+					});
+					canvas.addEventListener('mousemove', function(evt) {
+						if (dPos === null) return;
+						delta = dPos.subtract(V(evt.clientX, evt.clientY));                
+					});
+					canvas.addEventListener('mouseup', function(evt) {
+						if (dPos === null) return;
+						offset = offset.add(delta);
+						delta = V(0, 0);
+						dPos = null;
+					});
+					function loop() {
+						paint(offset.add(delta))
+						requestAnimationFrame(loop);
+					}
+					paint(offset.add(delta));
+					loop();
+				})();
+			}
+		
+			var zoom = .1;
             function paint(offset) {
                 ctx.clearRect(0, 0, canvDim.x, canvDim.y);
                 buffer.retrieve(offset.x, offset.y, canvDim.x, canvDim.y).forEach(function(node) {
                     ctx.beginPath();
-                    ctx.moveTo(node.p1.x - offset.x, node.p1.y - offset.y);
-                    ctx.lineTo(node.p2.x - offset.x, node.p2.y - offset.y);
+                    ctx.moveTo(node.p1.x * zoom - offset.x, node.p1.y * zoom - offset.y);
+                    ctx.lineTo(node.p2.x * zoom - offset.x, node.p2.y * zoom - offset.y);
                     ctx.closePath();
                     ctx.stroke();
                 });
