@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Document</title>
+    <style>
+        body { margin: 0; padding: 0; }
+        #canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+        }
+    </style>
+    <script src="quadtree-js/quadtree.min.js"></script>
+    <script src="V.js"></script>
+    <script src="LineBuffer.js"></script>
+    <script>
+        window.onload = load;
+        function load() {
+            var buffer = LineBuffer(V(10000, 10000)),
+                canvas = document.querySelector('#canvas'),
+                ctx = canvas.getContext('2d'),
+                canvDim = V(canvas.clientWidth, canvas.clientHeight),
+                maxLineLength = 400;
+            
+            canvas.width = canvDim.x;
+            canvas.height = canvDim.y;
+            
+            for (var i = 0; i < 150000; i++) {
+                var p1 = V(Math.random() * 10000, Math.random() * 10000);
+                buffer.insert(
+                    p1,
+                    p1.add(V(Math.random() * maxLineLength - maxLineLength / 2, Math.random() * maxLineLength - maxLineLength / 2)));
+            }
+            
+            (function() {
+                var dPos = null, delta = new V(0, 0), offset = V(0, 0);
+                canvas.addEventListener('mousedown', function(evt) {
+                    dPos = V(evt.clientX, evt.clientY);
+                });
+                canvas.addEventListener('mousemove', function(evt) {
+                    if (dPos === null) return;
+                    delta = dPos.subtract(V(evt.clientX, evt.clientY));                
+                });
+                canvas.addEventListener('mouseup', function(evt) {
+                    if (dPos === null) return;
+                    offset = offset.add(delta);
+                    delta = V(0, 0);
+                    dPos = null;
+                });
+                function loop() {
+                    // translate(delta);
+                    paint(offset.add(delta))
+                    requestAnimationFrame(loop);
+                }
+                paint(offset.add(delta));
+                loop();
+            })();
+
+            function translate(delta) {
+                canvas.style.transform = "translate3d(" + -delta.x + "px, " + -delta.y + "px, 0)";
+            }
+
+            function paint(offset) {
+                ctx.clearRect(0, 0, canvDim.x, canvDim.y);
+                buffer.retrieve(offset.x, offset.y, canvDim.x, canvDim.y).forEach(function(node) {
+                    ctx.beginPath();
+                    ctx.moveTo(node.p1.x - offset.x, node.p1.y - offset.y);
+                    ctx.lineTo(node.p2.x - offset.x, node.p2.y - offset.y);
+                    ctx.closePath();
+                    ctx.stroke();
+                });
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+</body>
+
+</html>
